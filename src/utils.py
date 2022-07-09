@@ -43,26 +43,22 @@ def flatten_dict(d: MutableMapping, parent_key: str = '', sep: str = '.'):
     return dict(_flatten_dict_gen(d, parent_key, sep))
 
 
-def get_hierarchy_attr(cls, filter=None):
-    """
-    Get all attributes for the current class and any parents, based on method resolution order (MRO).
-    Filter should be a function that takes a `attr_name: str, attr_value: obj` and returns a bool.
-    """
-    bases = cls.__mro__
-    if bases:
-        bases = list(bases)
-        bases.reverse()
+def get_all_attrs(obj):
+    """Get all attribute names from instance to top level base class in method resolution order."""
+    attr_names = []
+    
+    # instance attributes
+    if hasattr(obj, '__dict__'):
+        attr_names.extend(obj.__dict__.keys())
+    if hasattr(obj, '__slots__'):
+        attr_names.extend(obj.__slots__)
 
-    attributes = []
-
-    if filter:
-        for base in bases:
-            for name, attr in vars(base).items():
-                if (name not in attributes) and filter(name, attr):
-                    attributes.append(name)
-    else:
-        for base in bases:
-            for name, attr in vars(base).items():
-                if (name not in attributes):
-                    attributes.append(name)
-    return attributes
+    # type attributes
+    bases = type(obj).__mro__
+    
+    for base in bases:
+        for attr in vars(base):
+            if attr not in attr_names:
+                attr_names.append(attr)
+    
+    return attr_names

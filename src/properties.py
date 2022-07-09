@@ -1,8 +1,8 @@
 from typing import List
 
-from leases import GrossLease
-from utils import memoized_series
-from seriesgroup import SeriesGroup
+from .leases import GrossLease
+from .utils import memoized_series
+from .seriesgroup import SeriesGroup
 
 
 
@@ -17,7 +17,7 @@ class OfficeProperty(SeriesGroup):
         self.utilities_psf = utilities_psf
         self.ret_psf = ret_psf
         self.management_pct = management_pct
-        self.add_series([SeriesGroup.with_series('leases', leases)], index=0)
+        self.leases = SeriesGroup.with_series('leases', leases)
     
     @memoized_series
     def egi(self, period):

@@ -1,5 +1,5 @@
-from utils import memoized_series
-from seriesgroup import SeriesGroup
+from .utils import memoized_series
+from .seriesgroup import SeriesGroup
 
 
 
