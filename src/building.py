@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict
 
 from .leases import GrossLease
 from .utils import memoized_series
@@ -6,9 +6,9 @@ from .seriesgroup import SeriesGroup
 
 
 
-class OfficeProperty(SeriesGroup):
+class OfficeBuilding(SeriesGroup):
     
-    def __init__(self, name, sf: int, leases: List[GrossLease], cam_psf: float, insurance_psf: float,
+    def __init__(self, name, sf: int, leases: Dict[str, SeriesGroup], cam_psf: float, insurance_psf: float,
                     utilities_psf: float, ret_psf: float, management_pct: float) -> None:
         super().__init__(name)
         self.sf = sf
@@ -17,11 +17,11 @@ class OfficeProperty(SeriesGroup):
         self.utilities_psf = utilities_psf
         self.ret_psf = ret_psf
         self.management_pct = management_pct
-        self.leases = SeriesGroup.with_series('leases', leases)
+        self.leases = SeriesGroup.with_children('leases', leases)
     
     @memoized_series
-    def egi(self, period):
-        return sum([lease.effective_rent(period) for lease in self.leases])
+    def total_effective_rent(self, period):
+        return sum([effective_rent(period) for effective_rent in self.series(lambda s: s.name == 'effective_rent')])
 
     @memoized_series
     def cam(self, period):
@@ -33,7 +33,7 @@ class OfficeProperty(SeriesGroup):
     
     @memoized_series
     def utilities(self, period):
-        occupied_sf = sum([lease.sf for lease in self.leases])
+        occupied_sf = sum([lease.sf for lease in self.leases.child_series(lambda s: isinstance(s, SeriesGroup))])
         return self.utilities_psf * occupied_sf
     
     @memoized_series
@@ -42,7 +42,7 @@ class OfficeProperty(SeriesGroup):
     
     @memoized_series
     def management_fee(self, period):
-        return self.egi(period) * self.management_pct
+        return self.total_effective_rent(period) * self.management_pct
     
     @memoized_series
     def opex(self, period):
@@ -52,7 +52,7 @@ class OfficeProperty(SeriesGroup):
     
     @memoized_series
     def noi(self, period):
-        return self.egi(period) - self.opex(period)
+        return self.total_effective_rent(period) - self.opex(period)
 
 
 
@@ -80,18 +80,18 @@ def build_office(building_name):
                                                             where spaces.property_id = (?) and tenant_name is null', 
                                                             (property_data['id'],))]
     
-    in_place_leases = [GrossLease(**lease) for lease in occupied_suites]
+    in_place_leases = {lease['name']: GrossLease(**lease) for lease in occupied_suites}
     
     leasing_assumptions = [requests.get('https://leasingassumptions.herokuapp.com/marketleaserates', 
-                                    params={'address': property_data['address'], 'floor': suite['floor']}).json() 
-                       for suite in vacant_suites]
+                                        params={'address': property_data['address'], 'floor': suite['floor']}).json() 
+                        for suite in vacant_suites]
+
+    speculative_leases = {suite['name']: GrossLease(name=suite['name'], sf=suite['sf'], **assumptions) 
+                        for suite, assumptions in zip(vacant_suites, leasing_assumptions)}
     
-    speculative_leases = [GrossLease(name=suite['name'], sf=suite['sf'], **assumptions) 
-                      for suite, assumptions in zip(vacant_suites, leasing_assumptions)]
-    
-    office = OfficeProperty(name=property_data['name'], 
-                                sf=sum([l['sf'] for l in [*occupied_suites, *vacant_suites]]),
-                                leases=SeriesGroup.with_series('leases', [*in_place_leases, *speculative_leases]),
-                                **expenses)
+    office = OfficeBuilding(name=property_data['name'], 
+                            sf=sum([l['sf'] for l in [*occupied_suites, *vacant_suites]]),
+                            leases=dict(in_place_leases, **speculative_leases),
+                            **expenses)
     
     return office

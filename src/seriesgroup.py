@@ -1,41 +1,85 @@
-from typing import List
-from .utils import AbstractSeries, flatten_dict, get_all_attrs
+from __future__ import annotations
+from typing import Any, Callable, Dict, List
+
+from .utils import AbstractSeries, flatten_dict, get_all_attrs_w_filter
 
 
-class SeriesGroupIterator:
-    
-    def __init__(self, series_group) -> None:
-        self._series = iter(series_group.get_series().values())
-    
-    def __next__(self):
-        try:
-            return next(self._series)
-        except StopIteration:
-            raise StopIteration
+def is_child_series(name, attr):
+    if name == 'parent':
+        return False
+    return isinstance(attr, AbstractSeries)
 
 
 class SeriesGroup(AbstractSeries):
     
-    def __init__(self, name) -> None:
+    def __init__(self, name: str, parent: SeriesGroup=None) -> None:
         super().__init__()
         self.name = name
-    
-    def __call__(self, *args, **kwargs):
-        series = self.get_series()
-        series_values = {name: s(*args, **kwargs) for name, s in series.items()}
-        return flatten_dict(series_values)
-    
-    def __iter__(self):
-        return SeriesGroupIterator(self)
-    
-    def get_series(self):
-        attrs = {name: getattr(self, name) for name in get_all_attrs(self)}
-        series = {name: attr for name, attr in attrs.items() if isinstance(attr, AbstractSeries) or (isinstance(getattr(type(self), name, None), AbstractSeries))}
-        return series
+        self.parent = parent
     
     @classmethod
-    def with_series(cls, name, series: List):
-        new_group = cls(name)
-        for s in series:
-            setattr(new_group, s.name, s)
-        return new_group
+    def with_children(cls, name: str, children: Dict[str, SeriesGroup]) -> SeriesGroup:
+        new_sg = cls(name)
+        for name, sg in children.items():
+            setattr(new_sg, name, sg)
+        return new_sg
+    
+    def __setattr__(self, __name: str, __value: Any) -> None:
+        """If setting a SeriesGroup as an attribute, set the attribute's `parent` property to self"""
+        if isinstance(__value, SeriesGroup):
+            super(SeriesGroup, __value).__setattr__('parent', self)
+        return super().__setattr__(__name, __value)
+    
+    def __delattr__(self, __name: str) -> None:
+        """If removing a SeriesGroup attribute, set the `parent` property to None"""
+        attr = getattr(self, __name)
+        if isinstance(attr, SeriesGroup):
+            attr.parent = None
+        return super().__delattr__(__name)
+    
+    def __call__(self, *args: Any, **kwds: Any) -> Any:
+        series_values = {series.name: series(*args, **kwds) for _, series in self._series().items()}
+        return flatten_dict(series_values)
+    
+    def _series(self) -> Dict[str, SeriesGroup]:
+        """Get all AbstractBase attributes for self and class"""
+        return get_all_attrs_w_filter(self, is_child_series)
+    
+    def root(self) -> SeriesGroup:
+        """Return tree root node"""
+        return self.parent.root() if self.parent is not None else self
+    
+    def series(self, function: Callable | None = None) -> List[SeriesGroup]:
+        """
+        Return series in the tree where the test function returns `True` or all tree series if function is None
+        The test function should take a single AbstractSeries parameter and return a bool
+        """
+        return self.root().child_series(function=function)
+    
+    def child_series(self, function: Callable | None = None) -> List[SeriesGroup]:
+        """
+        Return children series where the test function returns `True` or all children series if function is None
+        The test function should take a single AbstractSeries parameter and return a bool
+        """
+        series = []
+        
+        children = self._series()
+        
+        for child in children.values():
+            # If there's a test condition, add child if it passes the test regardless of whether its a SG or memoized_series
+            # If SG, propogate call to children as well
+            if function is not None:
+                if function(child):
+                    series.append(child)
+                
+                if isinstance(child, SeriesGroup):
+                    series.extend(child.child_series(function=function))
+            
+            # If no test condition, then then propogate call if SG otherwise add to series
+            else:
+                if isinstance(child, SeriesGroup):
+                    series.extend(child.child_series(function=function))
+                else:
+                    series.append(child)
+        
+        return series
