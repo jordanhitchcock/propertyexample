@@ -38,10 +38,10 @@ class SeriesGroup(AbstractSeries):
         return super().__delattr__(__name)
     
     def __call__(self, *args: Any, **kwds: Any) -> Any:
-        series_values = {series.name: series(*args, **kwds) for _, series in self._series().items()}
+        series_values = {series.name: series(*args, **kwds) for series in self._series()}
         return flatten_dict(series_values)
     
-    def _series(self) -> Dict[str, SeriesGroup]:
+    def _series(self) -> List[SeriesGroup]:
         """Get all AbstractBase attributes for self and class"""
         return get_all_attrs_w_filter(self, is_child_series)
     
@@ -65,7 +65,7 @@ class SeriesGroup(AbstractSeries):
         
         children = self._series()
         
-        for child in children.values():
+        for child in children:
             # If there's a test condition, add child if it passes the test regardless of whether its a SG or memoized_series
             # If SG, propogate call to children as well
             if function is not None:

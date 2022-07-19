@@ -45,18 +45,18 @@ def flatten_dict(d: MutableMapping, parent_key: str = '', sep: str = '.'):
 
 def get_all_attrs_w_filter(obj, filter):
     """Get all attribute names from instance to top level base class in method resolution order."""
-    attrs = {}
+    attrs = []
 
     # instance attributes
     if hasattr(obj, '__dict__'):
         for name, value in obj.__dict__.items():
             if filter(name, value):
-                attrs[name] = getattr(obj, name)
+                attrs.append(getattr(obj, name))
     if hasattr(obj, '__slots__'):
         for name in obj.__slots__:
             attr = getattr(obj, name)
             if filter(name, attr):
-                attrs[name] = attr
+                attrs.append(attr)
     
     # type attributes
     bases = type(obj).__mro__
@@ -64,6 +64,6 @@ def get_all_attrs_w_filter(obj, filter):
     for base in bases:
         for name, attr in base.__dict__.items():
             if filter(name, attr) and (name not in attrs):
-                attrs[name] = getattr(obj, name)
+                attrs.append(getattr(obj, name))
     
     return attrs
